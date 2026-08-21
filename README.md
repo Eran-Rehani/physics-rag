@@ -129,9 +129,9 @@ The harness scores three things and calibrates a fourth:
 - **`--calibrate`** sweeps the abstain threshold and reports the value maximising abstention F1,
   asking each question once and recomputing decisions per threshold
 
-`abstain_threshold` defaults to `0.35`, which is a **placeholder**. It is meant to be replaced
-by a measured value: the negatives in the eval set exist so the threshold can be derived from
-the observed separation between answerable and unanswerable questions.
+`abstain_threshold` currently defaults to `0.82`, calibrated from the six-question demonstration
+run below. It must be recalibrated against `eval/eval_set.yaml` after the full corpus is ingested;
+the negative items exist so the threshold is derived from observed separation rather than guessed.
 
 ### Measured: why the threshold must be calibrated
 
@@ -151,7 +151,8 @@ The important result is the *separation*, not the averages. `multilingual-e5` co
 compress into a narrow high band — an utterly unrelated question ("optimal cache eviction
 policy for a distributed key-value store") still scored **0.801**. A plausible-looking default
 of `0.35` is therefore **inert**: it never fires, and every question would reach the generator.
-The default is now `0.82`, derived from measurement.
+The current `0.82` default is derived from this demonstration measurement and is not the final
+threshold for the coursework eval set.
 
 Two layers produce the abstention, which is why the out-of-corpus questions were caught even
 before calibration: the confidence gate, and the model's own instruction to reply
@@ -159,14 +160,15 @@ before calibration: the confidence gate, and the model's own instruction to repl
 on two questions the model cited a source outside the expected set.
 
 > These six questions are a **demonstration** that the harness works end to end, not the
-> project's eval set. The real one is authored from the corpus owner's own coursework:
-> populate `eval/eval_set.yaml` with 15–20 answerable pairs plus ~5 negatives, run
-> `rag eval --calibrate`, and replace this table.
+> project's final score. `eval/eval_set.yaml` now contains 20 grounded 77501 coursework
+> questions plus 5 deliberate negatives, with parser-verified source sections. Run
+> `rag eval --calibrate` after full-corpus ingest and replace this demonstration table with
+> the measured coursework results.
 
 ## Testing
 
 ```bash
-uv run pytest        # 94 tests, no model and no corpus required
+uv run pytest        # 93 tests, no model and no corpus required
 uv run ruff check .
 ```
 
