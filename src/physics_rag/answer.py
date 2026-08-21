@@ -16,8 +16,9 @@ SYSTEM_PROMPT = (
     "Rules:\n"
     "1. Answer ONLY from the provided sources. If the sources do not contain the answer, "
     f"reply exactly: {ABSTAIN_MESSAGE}\n"
-    "2. Cite every claim inline using the exact bracket labels shown in the source blocks, "
-    "for example [Lec_03.tex, Entropy]. Never invent a filename, section or page.\n"
+    "2. Cite every claim inline by copying the full bracket label given after 'cite as', "
+    "for example [Lec_03.tex, Entropy]. Never cite a bare source number such as [3], and "
+    "never invent a filename, section or page.\n"
     "3. Reproduce LaTeX equations ONLY from sources marked (math: exact). Sources marked "
     "(math: degraded) had their equations flattened by PDF text extraction, so their formulas "
     "are unreliable: describe those in words, or quote them with an explicit caveat, but never "
@@ -27,6 +28,8 @@ SYSTEM_PROMPT = (
 
 # Labels contain Hebrew and " > " separators; keep it non-greedy and single-line.
 _LABEL_RE = re.compile(r"\[[^\[\]\n]+\]")
+# Models cite the block either as "[3]" or as "[SOURCE 3]"; catch both.
+_NUMERIC_REF_RE = re.compile(r"\[(?:source\s*)?(\d{1,2})\]", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,10 +45,28 @@ class Answer:
 def build_context(results: Sequence[SearchResult]) -> str:
     """Render retrieved chunks as numbered, citable source blocks."""
     blocks = [
-        f"[{index}] {format_citation(result)} (math: {result.math_fidelity})\n{result.text}"
+        f"SOURCE {index} -- cite as {format_citation(result)} "
+        f"(math: {result.math_fidelity})\n{result.text}"
         for index, result in enumerate(results, start=1)
     ]
     return "\n\n".join(blocks)
+
+
+def resolve_numeric_citations(text: str, results: Sequence[SearchResult]) -> str:
+    """Rewrite bare source numbers like ``[3]`` into their real citation labels.
+
+    Small models sometimes cite the source number instead of the label. The
+    requirement is that every claim carries [filename, section/page], so the
+    number is resolved back rather than left as an unusable reference.
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        index = int(match.group(1))
+        if 1 <= index <= len(results):
+            return format_citation(results[index - 1])
+        return match.group(0)
+
+    return _NUMERIC_REF_RE.sub(replace, text)
 
 
 def build_prompt(question: str, results: Sequence[SearchResult]) -> str:
@@ -65,12 +86,33 @@ class AnswerService:
         self._generator = generator
         self._config = config
 
+    @property
+    def retriever(self) -> Retriever:
+        return self._retriever
+
+    @property
+    def generator(self) -> Generator:
+        return self._generator
+
+    def with_config(self, config: Config) -> AnswerService:
+        """A service sharing this one's retriever and generator, under a new config.
+
+        Used by the UI to vary the abstain threshold without reloading the
+        embedding model or reconnecting to llama-server.
+        """
+        return AnswerService(self._retriever, self._generator, config)
+
     def ask(self, question: str, *, top_k: int | None = None) -> Answer:
         retrieval = self._retriever.retrieve(question, top_k=top_k)
         results = dedupe_results(retrieval.results)
 
+        # The service owns the abstain decision rather than deferring to the
+        # retriever's own config, so a caller can vary the threshold (the UI
+        # slider, the eval sweep) without rebuilding the retriever.
+        abstain = retrieval.confidence < self._config.abstain_threshold
+
         # Never spend a generation on a low-confidence retrieval.
-        if retrieval.abstain or not results:
+        if abstain or not results:
             return Answer(
                 question=question,
                 text=ABSTAIN_MESSAGE,
@@ -81,6 +123,8 @@ class AnswerService:
             )
 
         text = self._generator.generate(build_prompt(question, results), system=SYSTEM_PROMPT)
+
+        text = resolve_numeric_citations(text, results)
 
         abstained = text.strip().casefold().startswith(ABSTAIN_MESSAGE)
         if abstained:

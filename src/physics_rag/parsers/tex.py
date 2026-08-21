@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from physics_rag.normalize import normalize_text
+from physics_rag.normalize import normalize_text, normalize_title
 from physics_rag.parsers.base import MathFidelity, ParsedDocument, Section
 
 _LEVELS = {
@@ -222,7 +222,9 @@ def _split_sections(body: str) -> list[tuple[str, int, tuple[str, ...], str]]:
 
         while stack and stack[-1][0] >= level:
             stack.pop()
-        stack.append((level, title_raw))
+        # Normalise here too: the ancestor chain becomes section_path, which is
+        # rendered into citation labels and must stay on a single line.
+        stack.append((level, normalize_title(_clean_text(title_raw))))
 
         current_title = title_raw
         current_level = level
@@ -243,7 +245,7 @@ class TexParser:
 
         sections: list[Section] = []
         for raw_title, level, section_path, raw_body in _split_sections(body):
-            title = _clean_text(raw_title)
+            title = normalize_title(_clean_text(raw_title))
             clean_body = _clean_text(raw_body)
 
             if not clean_body:

@@ -144,6 +144,81 @@ def stats(
     console.print(f"Chunks     : {store.count()}")
 
 
+@app.command(name="eval")
+def eval_command(
+    eval_set: Path = typer.Argument(Path("eval/eval_set.yaml"), help="YAML eval set."),
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="TOML config file."),
+    collection: str | None = typer.Option(None, "--collection", help="Chroma collection name."),
+    top_k: int | None = typer.Option(None, "--top-k", "-k", help="Chunks to retrieve."),
+    calibrate: bool = typer.Option(
+        False, "--calibrate", help="Sweep the abstain threshold and report the best value."
+    ),
+) -> None:
+    """Score the eval set on retrieval hit-rate, citation correctness and abstention."""
+    from physics_rag.answer import AnswerService
+    from physics_rag.embeddings import E5Embedder
+    from physics_rag.evaluation import (
+        best_threshold,
+        format_report,
+        load_eval_set,
+        run_eval,
+        sweep_threshold,
+    )
+    from physics_rag.generation import LlamaServerGenerator
+    from physics_rag.retrieval import Retriever
+    from physics_rag.store import ChromaStore
+
+    config = _load_config(config_path)
+    collection_name = collection or config.collection_name
+
+    items = load_eval_set(eval_set)
+    if not items:
+        console.print("[yellow]Eval set is empty. Add questions to it first.[/yellow]")
+        raise typer.Exit(1)
+
+    embedder = E5Embedder(config.embedding_model)
+    store = ChromaStore(config.chroma_dir, collection_name)
+    retriever = Retriever(embedder, store, config)
+    generator = LlamaServerGenerator(config.llama_server_url, timeout=config.generation_timeout)
+
+    try:
+        service = AnswerService(retriever, generator, config)
+        report = run_eval(
+            items, service, top_k=top_k, progress=lambda m: console.print(f"[dim]{m}[/dim]")
+        )
+        console.print()
+        console.print(format_report(report))
+
+        if calibrate:
+            thresholds = [round(0.02 * i, 2) for i in range(51)]
+            sweep = sweep_threshold(items, service, thresholds, top_k=top_k)
+            best = best_threshold(sweep)
+            console.print()
+            console.print(f"Calibrated abstain_threshold: [bold]{best:.2f}[/bold]")
+            console.print(
+                f"[dim]current config value: {config.abstain_threshold:.2f} "
+                f"- set abstain_threshold = {best:.2f} in your config to adopt it[/dim]"
+            )
+    finally:
+        generator.close()
+
+
+@app.command()
+def ui(
+    config_path: Path | None = typer.Option(None, "--config", "-c", help="TOML config file."),
+    collection: str | None = typer.Option(None, "--collection", help="Chroma collection name."),
+) -> None:
+    """Launch the Gradio web UI (requires the 'ui' extra)."""
+    try:
+        from physics_rag.ui import main as ui_main
+    except ImportError as exc:  # pragma: no cover - depends on optional extra
+        console.print(f"[red]Gradio is not installed:[/red] {exc}")
+        console.print("Install it with:  uv sync --extra ui")
+        raise typer.Exit(1) from exc
+
+    ui_main(config_path, collection)
+
+
 def main() -> None:
     app()
 

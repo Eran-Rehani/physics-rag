@@ -10,6 +10,7 @@ from physics_rag.answer import (
     build_context,
     build_prompt,
     extract_cited_labels,
+    resolve_numeric_citations,
 )
 from physics_rag.chunking import Chunk
 from physics_rag.config import Config, default_config
@@ -147,7 +148,9 @@ def test_prompt_contains_numbered_blocks_labels_and_math_markers() -> None:
     AnswerService(Retriever(embedder, store, config), generator, config).ask("What is energy?")
 
     prompt = generator.prompts[0]
-    assert "[1]" in prompt and "[2]" in prompt
+    assert "SOURCE 1" in prompt and "SOURCE 2" in prompt
+    # Bare numeric markers must not look like citations or the model copies them.
+    assert "[1]" not in prompt and "[2]" not in prompt
     assert "(math: exact)" in prompt
     assert "(math: degraded)" in prompt
     assert "[a.tex, One]" in prompt
@@ -185,8 +188,8 @@ def test_build_context_marks_degraded_sources() -> None:
         ]
     )
 
-    assert "[1] [a.tex, One] (math: exact)" in context
-    assert "[2] [b.pdf, p. 2] (math: degraded)" in context
+    assert "SOURCE 1 -- cite as [a.tex, One] (math: exact)" in context
+    assert "SOURCE 2 -- cite as [b.pdf, p. 2] (math: degraded)" in context
     assert "exact chunk" in context
     assert "degraded chunk" in context
 
@@ -197,3 +200,47 @@ def test_build_prompt_includes_question_and_sources() -> None:
     assert "Sources:" in prompt
     assert "[a.tex, S]" in prompt
     assert prompt.rstrip().endswith("Question: Why?")
+
+
+def test_resolve_numeric_citations_rewrites_bare_numbers() -> None:
+    results = [
+        _result("a", filename="a.tex", section_path="One"),
+        _result("b", filename="b.pdf", page=7, math_fidelity="degraded"),
+    ]
+
+    text = "Claim one [1] and claim two [SOURCE 2]. Out of range [9] stays."
+
+    assert resolve_numeric_citations(text, results) == (
+        "Claim one [a.tex, One] and claim two [b.pdf, p. 7]. Out of range [9] stays."
+    )
+
+
+def test_numeric_citation_is_resolved_end_to_end() -> None:
+    config = _config(-1.0)
+    embedder = FakeEmbedder()
+    chunk = _chunk("Friedmann content here for the test.", filename="ryden.pdf", section_path="4.2")
+    store = _store_with(embedder, [chunk])
+    # A small model citing the source number instead of the label must still
+    # produce a usable [filename, section] citation.
+    generator = FakeGenerator("The equation binds curvature and density [1].")
+
+    answer = AnswerService(Retriever(embedder, store, config), generator, config).ask("friedmann?")
+
+    assert "[ryden.pdf, 4.2]" in answer.text
+    assert extract_cited_labels(answer.text) == ["[ryden.pdf, 4.2]"]
+
+
+def test_with_config_reuses_retriever_and_generator() -> None:
+    config = _config(-1.0)
+    embedder = FakeEmbedder()
+    store = _store_with(embedder, [_chunk("body text here", section_path="Sec")])
+    generator = FakeGenerator("answer [notes.tex, Sec]")
+    service = AnswerService(Retriever(embedder, store, config), generator, config)
+
+    # Raising the threshold above any score must flip the same service to abstaining.
+    strict = service.with_config(_config(1.01))
+
+    assert strict.retriever is service.retriever
+    assert strict.generator is service.generator
+    assert strict.ask("q").abstained is True
+    assert generator.calls == 0

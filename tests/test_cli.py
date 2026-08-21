@@ -51,3 +51,20 @@ def test_stats_help() -> None:
     assert result.exit_code == 0
     for option in ("--config", "--collection"):
         assert option in output
+
+
+def test_eval_help() -> None:
+    result = runner.invoke(app, ["eval", "--help"])
+    output = _plain(result.stdout)
+
+    assert result.exit_code == 0
+    for option in ("--config", "--collection", "--top-k", "--calibrate"):
+        assert option in output
+
+
+def test_ui_help() -> None:
+    result = runner.invoke(app, ["ui", "--help"])
+    output = _plain(result.stdout)
+
+    assert result.exit_code == 0
+    assert "--config" in output

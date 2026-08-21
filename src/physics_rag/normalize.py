@@ -49,6 +49,16 @@ def normalize_text(text: str) -> str:
     return "\n".join(collapsed).strip()
 
 
+def normalize_title(text: str) -> str:
+    """Normalize a heading into a single line.
+
+    PDF outline titles frequently carry embedded newlines (e.g. "4\nCosmic
+    Dynamics"). A citation label must stay on one line, both to read correctly
+    and because the label parser refuses to span newlines.
+    """
+    return " ".join(normalize_text(text).split())
+
+
 def content_hash(text: str) -> str:
     """Return the first 16 hex characters of the SHA-256 hash of normalized text."""
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()[:16]

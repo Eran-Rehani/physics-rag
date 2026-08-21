@@ -6,7 +6,7 @@ from typing import Any
 
 from pypdf import PdfReader
 
-from physics_rag.normalize import normalize_text
+from physics_rag.normalize import normalize_text, normalize_title
 from physics_rag.parsers.base import MathFidelity, ParsedDocument, Section
 
 PDFTOTEXT = "pdftotext"
@@ -37,7 +37,7 @@ class PdfParser:
 
             while outline_idx < len(outline) and outline[outline_idx][0] <= page_index:
                 _, raw_title, level = outline[outline_idx]
-                title = normalize_text(raw_title)
+                title = normalize_title(raw_title)
 
                 while stack and stack[-1][0] >= level:
                     stack.pop()
