@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Never commit the corpus or anything derived from it.
+data/
+corpus/
+chroma/
+*.sqlite3
+ingest_state.json
+
+# Local config may contain absolute paths to private material.
+config.local.toml

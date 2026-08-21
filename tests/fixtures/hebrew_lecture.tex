@@ -1,0 +1,101 @@
+%% LyX 2.4.4 created this file.  For more info, see https://www.lyx.org/.
+%% Do not edit unless you really know what you are doing.
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{fontspec}
+\setlength{\parindent}{0bp}
+\usepackage{color}
+\usepackage{pifont}
+\usepackage{float}
+\usepackage{units}
+\usepackage{cancel}
+\usepackage{geometry}
+\geometry{verbose,tmargin=2.7cm,bmargin=2cm,lmargin=2cm,rmargin=2cm,headheight=2cm,headsep=0cm,footskip=0cm}
+\usepackage{setspace}
+\PassOptionsToPackage{normalem}{ulem}
+\usepackage{ulem}
+\usepackage{microtype}
+\onehalfspacing
+\usepackage[pdfusetitle,
+ bookmarks=true,bookmarksnumbered=true,bookmarksopen=true,bookmarksopenlevel=2,
+ breaklinks=true,pdfborder={0 0 0},pdfborderstyle={},backref=section,colorlinks=true]
+ {hyperref}
+\hypersetup{
+ linkcolor=black, citecolor=black}
+
+\makeatletter
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% LyX specific LaTeX commands.
+\providecommand\textquotedblplain{%
+  \bgroup\addfontfeatures{Mapping=}\char34\egroup}
+
+\@ifundefined{date}{}{\date{}}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% User specified LaTeX commands.
+% Engine guard: use XeLaTeX/LuaLaTeX
+\usepackage{iftex}
+\ifPDFTeX
+  \PackageError{template}{Please compile with XeLaTeX or LuaLaTeX}{}
+\fi
+
+\begin{document}
+
+\section{שבוע 2 - הרצאה 3 28 אוקטובר 2025}
+
+\subsection*{תקציר השבוע הקודם}
+\begin{itemize}
+\item פתרון התכונות המאקרוסקופיות של מערכת מרובת חלקיקים - שיטת ההסתברויות.
+\item חוק המספרים הגדולים - ההתפלגות בפועל שווה להתפלגות החזויה.
+\item משפט הגבול המרכזי - כאשר מספר המשתנים האקראיים מאוד גדול ההסתברות
+של הסכום מתרכזת סביב הערך הסביר ביותר.
+\end{itemize}
+תאור מערכות פיזיקליות:
+
+מיקרו-מצבים - תאור פרטני של כל דרגות החופש.
+
+מאקרו-מצב - אפיון המערכת לפי תכונות מאקרוסקופיות.
+
+כפליות - מספר המיקרו-מצבים המתאימים למאקרו-מצב.
+
+\textbf{\textcolor{red}{הנחה: ההסתברות של כל המיקרו-מצבים המותרים
+שווה.}}
+
+$\Leftarrow$ ההסתברות של מאקרו-מצב פרופרוציונית לכפליות שלו.
+מסקנה : המערכת נוטה להגיע למאקרו-מצב הסביר ביותר (ושכניו הקרובים אליו)
+ואז להשאר בו - מצב ש\textquotedbl מ.
+אנטרופיה
+
+\[
+S=k_{B}\ln\left(\Omega\right)
+\]
+
+\[
+\Delta S\geqslant0
+\]
+
+
+\subsubsection*{מוצק אינשטיין:}
+
+$N+1$ חלקיקים הניתנים לאבחנה ו-$q$ מנות אנרגיה.
+\[
+\Omega\left(N+1,q\right)=\frac{\left(N+q\right)!}{q!N!}
+\]
+\[
+\Omega\left(N+1,q_{A},N+1,q_{B}\right)=\Omega\left(N+1,q_{A}\right)\Omega\left(N+1,q_{B}\right)
+\]
+
+\[
+\ln\left(\Omega\left(N+1,q_{A},N+1,q_{B}\right)\right)=\ln\left(\Omega\left(N+1,\frac{q}{2},N+1,\frac{q}{2}\right)e^{-\left(\frac{x}{\nicefrac{q}{2}}\right)^{2}N}\right)
+\]
+ 
+
+המצב הסביר ביותר הוא $\frac{q}{2}=q_{A}=q_{B}$
+
+הסיכוי לסטות מהמצב הסביר ביותר ב-$x$
+
+\[
+P\left(x\neq0\right)=P\left(x=0\right)\cdot\exp\left(-\left(\frac{x}{\nicefrac{q}{2}}\right)^{2}\right)N
+\]
+
+
+\end{document}
