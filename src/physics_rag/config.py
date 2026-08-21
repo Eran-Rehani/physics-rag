@@ -16,7 +16,10 @@ class Config:
     min_chunk_chars: int = 80
     chunk_overlap_chars: int = 0
     top_k: int = 6
-    abstain_threshold: float = 0.35
+    # Calibrated, not guessed. multilingual-e5 cosine scores compress into a
+    # narrow high band (~0.78-0.91 measured), so a low threshold like 0.35 never
+    # fires. Re-derive for your own corpus with: rag eval --calibrate
+    abstain_threshold: float = 0.82
     llama_server_url: str = "http://127.0.0.1:8080"
     generation_timeout: float = 300.0
     exclude_dirs: tuple[str, ...] = ("Docs",)

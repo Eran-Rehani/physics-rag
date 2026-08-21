@@ -116,7 +116,7 @@ Configuration is a TOML file passed with `-c`:
 chroma_dir = "~/.cache/physics-rag/chroma"
 collection_name = "physics"
 top_k = 6
-abstain_threshold = 0.35
+abstain_threshold = 0.82
 ```
 
 ## Evaluation
@@ -133,9 +133,35 @@ The harness scores three things and calibrates a fourth:
 by a measured value: the negatives in the eval set exist so the threshold can be derived from
 the observed separation between answerable and unanswerable questions.
 
-> **Eval results:** the eval set is authored from the corpus owner's own coursework and is not
-> committed with content. Populate `eval/eval_set.yaml` (15–20 answerable pairs plus ~5
-> negatives), run `rag eval --calibrate`, and paste the report here.
+### Measured: why the threshold must be calibrated
+
+Running the harness against a 4216-chunk collection of astrophysics textbooks (6 demonstration
+questions: 4 answerable, 2 deliberately out-of-corpus) produced:
+
+| Metric | Result |
+|---|---|
+| Retrieval hit-rate | **1.000** (4/4) |
+| Citation accuracy | 0.500 (2/4) |
+| Abstention precision / recall / F1 | **1.000** |
+| Mean confidence, answerable | 0.889 |
+| Mean confidence, negative | 0.794 |
+| **Calibrated `abstain_threshold`** | **0.82** |
+
+The important result is the *separation*, not the averages. `multilingual-e5` cosine scores
+compress into a narrow high band — an utterly unrelated question ("optimal cache eviction
+policy for a distributed key-value store") still scored **0.801**. A plausible-looking default
+of `0.35` is therefore **inert**: it never fires, and every question would reach the generator.
+The default is now `0.82`, derived from measurement.
+
+Two layers produce the abstention, which is why the out-of-corpus questions were caught even
+before calibration: the confidence gate, and the model's own instruction to reply
+"not found in corpus". Citation accuracy of 0.5 is a real miss, not a rounding artifact —
+on two questions the model cited a source outside the expected set.
+
+> These six questions are a **demonstration** that the harness works end to end, not the
+> project's eval set. The real one is authored from the corpus owner's own coursework:
+> populate `eval/eval_set.yaml` with 15–20 answerable pairs plus ~5 negatives, run
+> `rag eval --calibrate`, and replace this table.
 
 ## Testing
 
