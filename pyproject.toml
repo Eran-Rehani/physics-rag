@@ -51,3 +51,7 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+# tests/fakes.py is imported by test modules via pytest's rootdir sys.path insertion.
+known-first-party = ["physics_rag", "fakes"]
