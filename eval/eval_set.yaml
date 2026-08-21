@@ -1,0 +1,68 @@
+# Evaluation set for physics-rag.
+#
+# HOW THIS IS SCORED
+#   retrieval hit-rate@k : does any retrieved chunk come from a file listed in
+#                          `expected_files`?
+#   citation correctness : do the citations the model emits point at an
+#                          (file, section/page) pair listed in `expected_citations`?
+#   abstention           : for `answerable: false` items, did the system say
+#                          "not found in corpus" instead of inventing an answer?
+#
+# The abstention threshold is DERIVED from this file, not guessed: the harness
+# sweeps the retrieval-confidence cutoff and picks the value that best separates
+# the answerable items from the unanswerable ones. That only works if you supply
+# genuine negatives - questions whose answers really are absent from the corpus.
+#
+# FIELDS
+#   id                 stable short slug, used in reports
+#   question           asked in English (per project decision)
+#   answerable         true for in-corpus questions, false for negatives
+#   expected_files     list of filenames (basename is enough) that should be retrieved
+#   expected_citations optional, more precise: {file, section} or {file, page}
+#   notes              free text, e.g. which course/lecture this came from
+#
+# TARGET: 15-20 answerable items + ~5 negatives.
+
+questions:
+  # ---------------- worked examples (replace these) ----------------
+  - id: einstein-solid-entropy
+    question: "What is the entropy of an Einstein solid in terms of N and q?"
+    answerable: true
+    expected_files:
+      - Lec_03.tex
+    expected_citations:
+      - file: Lec_03.tex
+        section: "אנטרופיה של מוצק איינשטיין"
+    notes: "77307 Intro to Statistical Physics, week 2 lecture 3"
+
+  - id: partition-function-canonical
+    question: "How is the partition function defined for a canonical ensemble?"
+    answerable: true
+    expected_files:
+      - PartitionFunction2025.pdf
+    expected_citations:
+      - file: PartitionFunction2025.pdf
+        page: 1
+    notes: "77307 lecture slides, Hebrew source, English question (cross-lingual retrieval)"
+
+  # ---------------- negatives (replace these) ----------------
+  - id: neg-quantum-chromodynamics-lattice
+    question: "What is the lattice spacing dependence of the QCD string tension?"
+    answerable: false
+    expected_files: []
+    notes: "Never covered in any course in the corpus."
+
+# TODO(human): replace the four examples above with 15-20 real questions from
+# your own coursework plus ~5 negatives.
+#
+# Picking good items:
+#   - Prefer questions you already know the answer AND the source location for,
+#     so `expected_files` is ground truth rather than a guess.
+#   - Spread across courses and years, and across .tex and .pdf sources - the
+#     two parsers have different math fidelity and should both be exercised.
+#   - Include at least a few whose source is a Hebrew document, since the whole
+#     point of the multilingual embedder is answering English questions from
+#     Hebrew notes.
+#   - For negatives, pick plausible-sounding physics you genuinely never studied.
+#     A negative that is merely *rare* in the corpus tests nothing; a negative
+#     that is absent tests abstention.
