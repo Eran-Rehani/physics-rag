@@ -130,8 +130,9 @@ The harness scores three things and calibrates a fourth:
   asking each question once and recomputing decisions per threshold
 
 `abstain_threshold` currently defaults to `0.82`, calibrated from the six-question demonstration
-run below. It must be recalibrated against `eval/eval_set.yaml` after the full corpus is ingested;
-the negative items exist so the threshold is derived from observed separation rather than guessed.
+run below. It is **corpus-specific**: the confidence band shifts with corpus composition, so a
+different collection needs its own sweep. The negative items exist so the threshold is derived
+from observed separation rather than guessed.
 
 ### Measured: why the threshold must be calibrated
 
@@ -160,10 +161,40 @@ before calibration: the confidence gate, and the model's own instruction to repl
 on two questions the model cited a source outside the expected set.
 
 > These six questions are a **demonstration** that the harness works end to end, not the
-> project's final score. `eval/eval_set.yaml` now contains 20 grounded 77501 coursework
-> questions plus 5 deliberate negatives, with parser-verified source sections. Run
-> `rag eval --calibrate` after full-corpus ingest and replace this demonstration table with
-> the measured coursework results.
+> project's final score.
+
+### Status of the full eval set, stated plainly
+
+`eval/eval_set.yaml` holds 20 answerable questions plus 5 deliberate negatives over the same
+astrophysics collection. Two caveats matter more than the numbers will:
+
+1. **The questions are TOC-derived, not owner-authored.** They were written from the PDFs'
+   outline section paths rather than from coursework. Because each question was reverse-engineered
+   from its own answer key, retrieval hit-rate on this set is **partly circular** — it measures
+   that the pipeline retrieves what it was pointed at, not that it answers questions a student
+   would actually ask. Treat it as a smoke test of the harness, not as a quality score.
+2. **The 25-item run has not been completed.** A `--calibrate` run was paused partway; the
+   harness reports only after scoring every item, so there are no partial numbers to publish.
+   No measured coursework table appears here because one does not exist yet, and inventing one
+   would defeat the point of the project.
+
+A pre-flight against the store's metadata confirmed all 25 expected `(file, section)` pairs
+resolve (`0` unmatched, en-dashes included), so any citation failure the run reports will be
+attributable to retrieval or generation rather than to a mistyped answer key.
+
+### Reproducing the measurement
+
+Generation and embedding **cannot run concurrently on 16 GB** — `llama-server` holds ~4.8 GB
+plus a 24k-context q8 KV cache, and adding the embedder drove available RAM low enough for the
+kernel to kill an ingest mid-run. Serialise the two:
+
+```bash
+llm-serve rag-quality -d      # wait for {"status":"ok"} on :8080
+uv run rag eval --calibrate   # ~140 s per answerable question
+```
+
+Prompt processing measures **~40 tok/s** at 2.2k-token contexts on this hardware, so the cost is
+dominated by the retrieved context, not by the generated answer. Keep `top_k` small.
 
 ## Testing
 
