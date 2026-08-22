@@ -321,43 +321,84 @@ It is also **corpus-specific**. The 0.82 applies to the astrophysics collection.
 its own sweep, and using the astrophysics number there would be a guess wearing the costume
 of a measurement.
 
-### The one completed run — a demonstration, not a score
+### The measured 25-item run
 
-Six questions (4 answerable, 2 deliberately out-of-corpus) against a 4216-chunk astrophysics
-collection:
+25 questions (20 answerable, 5 deliberately out-of-corpus) against the 4097-chunk
+astrophysics collection, `top_k = 6`, `abstain_threshold = 0.82`, wall time 56 minutes:
 
 | Metric | Result |
 |---|---|
-| Retrieval hit-rate | **1.000** (4/4) |
-| Citation accuracy | 0.500 (2/4) |
-| Abstention precision / recall / F1 | **1.000** |
-| Mean confidence, answerable | 0.889 |
-| Mean confidence, negative | 0.794 |
-| Calibrated `abstain_threshold` | **0.82** |
+| Retrieval hit-rate | **0.900** (18/20) |
+| Citation accuracy (of answered) | **0.368** (7/19) |
+| Abstention precision | 0.833 |
+| Abstention recall | **1.000** |
+| Abstention F1 | 0.909 |
+| Mean confidence, answerable | 0.882 |
+| Mean confidence, negative | 0.814 |
 
-The meaningful figure is the **separation** (0.889 vs 0.794), not the averages. Citation
-accuracy of 0.5 is a real miss, not a rounding artifact: on two questions the model cited a
-source outside the expected set.
+**Retrieval works; citation does not.** A chunk from the right file reaches the context 90%
+of the time, and the model then attributes its claims correctly in 37% of the answers it
+produces. That gap is the most useful result the project has produced: retrieval is the
+solved sub-problem here, and citation binding by a 2B-parameter model is not. The next
+lever is a larger generator or constrained decoding that can only emit labels present in
+the context — not more retrieval tuning.
 
-### Current status, stated plainly
+An earlier six-question demonstration scored 1.000 hit-rate and 0.500 citation accuracy.
+The 25-item run is the number to trust; the demonstration was too small to be informative,
+and it is what produced the 0.82 threshold that §6 now shows to be slightly wrong.
 
-`eval/eval_set.yaml` holds 20 answerable questions plus 5 negatives. Two caveats matter more
-than any number derived from them:
+### The threshold was too low, and the eval proves it
 
-1. **The questions are TOC-derived, not owner-authored.** They were written from the PDFs'
-   outline section paths rather than from coursework. Each question was reverse-engineered
-   from its own answer key, so retrieval hit-rate on this set is **partly circular** — it
-   measures that the pipeline retrieves what it was pointed at, not that it answers a
-   question a student would actually ask. It is a smoke test of the harness, not a quality
-   score.
-2. **The 25-item run has not been completed.** A `--calibrate` run was paused partway. The
-   harness assembles its report only after scoring every item, so no partial numbers exist.
-   No measured coursework table appears in this project because one does not exist yet, and
-   inventing one would defeat the point.
+Every negative was refused — recall 1.000 — but not by the mechanism designed to catch them:
+
+| Negative question | Confidence | Caught by |
+|---|---|---|
+| `neg-sqlite-wal` | 0.780 | confidence gate |
+| `neg-http2-hpack` | 0.814 | confidence gate |
+| `neg-qcd-string-tension` | 0.819 | confidence gate |
+| `neg-kubernetes-scheduling` | **0.827** | the model's own refusal |
+| `neg-transformer-rope` | **0.830** | the model's own refusal |
+
+Two of five negatives cleared the 0.82 gate and reached the generator. They were refused
+only because the prompt tells the model to answer "not found in corpus" when the context
+does not support an answer — the weaker of the two layers, since it depends on a small
+model obeying an instruction.
+
+That same layer caused the only false abstention: `habitable-zone` scored 0.851, passed the
+gate, and the model refused anyway. That one error is the whole difference between
+abstention precision 0.833 and 1.000.
+
+The data names its own fix:
+
+```
+highest-scoring negative   0.830   (neg-transformer-rope)
+lowest-scoring answerable  0.850   (hr-main-sequence)
+```
+
+The classes are **perfectly separable** on this run: any threshold in `(0.830, 0.850]` gates
+every negative without rejecting an answerable question. The 0.82 default sits just below
+that window. This is the calibration argument with better evidence — a threshold derived
+from six questions was wrong by a small but consequential margin at 25.
+
+### Provenance, stated plainly
+
+`eval/eval_set.yaml` holds 20 answerable questions plus 5 negatives, and one caveat matters
+more than any number above.
+
+**The questions are TOC-derived, not owner-authored.** They were written from the PDFs'
+outline section paths rather than from coursework, so each was reverse-engineered from its
+own answer key. Retrieval hit-rate on this set is therefore **partly circular**: it measures
+that the pipeline retrieves what it was pointed at, not that it answers a question a student
+would actually ask. Read 0.900 as an upper bound and a smoke test of the harness, not as a
+quality score. Replacing these with real coursework questions is the top open item.
+
+Citation accuracy is far less affected by the circularity and is the more trustworthy of the
+two figures: the model sees the same context either way, and the only question is whether it
+attributes its claims correctly.
 
 A pre-flight against the store's metadata confirmed all 25 expected `(file, section)` pairs
-resolve — **0 unmatched**, en-dashes included — so any citation failure the run eventually
-reports is attributable to retrieval or generation rather than a mistyped answer key.
+resolve — **0 unmatched**, en-dashes included — so the citation failures are attributable to
+the model, not to a mistyped answer key.
 
 ---
 
@@ -394,7 +435,7 @@ magnitude depending on what a course directory actually contains.
 | Collection | Content | Chunks |
 |---|---|---|
 | `physics` | Year 4 astrophysics, 11 files, 0 failures | 4097 |
-| `qm2` | Course 77605 Quantum Theory (2) | in progress |
+| `qm2` | Course 77605 Quantum Theory (2), 277 files, 0 failures | 13,510 |
 
 ---
 
@@ -461,8 +502,8 @@ abstention gate on the new collection.
 Two layers. `--show-sources` prints the retrieved chunks with their scores and math
 fidelity, so a citation can be checked against the text that produced it. And the eval
 harness scores citation accuracy against an answer key — which is how we know it is
-currently **0.500 on the demonstration set**, not 1.0. The number is published precisely
-because it is not flattering.
+currently **0.368 on the 25-item run**, not 1.0. The number is published precisely because
+it is not flattering — see §6.
 
 **Why does Hebrew matter so much here?**
 It eliminates the default embedder and forces a cross-lingual one, and it introduces bidi
@@ -504,8 +545,8 @@ CI cannot catch is §8 — which is why that section exists.
 - **`IngestState` is shared across collections** and does not record where chunks landed, so a
   stale entry can silently skip a file. `--force` is the workaround; the durable fix is to key
   state by collection.
-- **No measured 25-item eval table exists**, and the committed questions are TOC-derived rather
-  than owner-authored. See §6.
+- **Citation accuracy is 0.368**, the project's weakest measured number, and the committed
+  questions are TOC-derived rather than owner-authored. See §6.
 - **Full-corpus coverage is incomplete.** Only some course years are staged and ingested.
 
 ## 11. Next steps
@@ -514,7 +555,8 @@ Roughly in order of how much they would improve the project's credibility:
 
 1. **Owner-authored eval pairs.** Replacing the TOC-derived questions with real coursework
    questions removes the circularity and makes the hit-rate mean something.
-2. **Complete the 25-item calibrated run** and publish the measured table.
+2. **Adopt a threshold in `(0.830, 0.850]`** for the astrophysics collection, replacing the
+   0.82 inherited from the six-question demonstration.
 3. **Key `IngestState` by collection**, removing the silent-skip failure mode.
 4. **Calibrate a `qm2`-specific threshold** once its ingest completes.
 5. **`.lyx` support** via `lyx -e latex`, unlocking a whole corpus year.

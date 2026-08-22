@@ -126,75 +126,122 @@ The harness scores three things and calibrates a fourth:
 - **retrieval hit-rate** — did any retrieved chunk come from an expected file?
 - **citation accuracy** — do the emitted `[file, section/page]` labels match the expected source?
 - **abstention precision / recall / F1** — measured against deliberately unanswerable questions
-- **`--calibrate`** sweeps the abstain threshold and reports the value maximising abstention F1,
-  asking each question once and recomputing decisions per threshold
+- **`--calibrate`** sweeps the abstain threshold and reports the value maximising abstention F1
 
-`abstain_threshold` currently defaults to `0.82`, calibrated from the six-question demonstration
-run below. It is **corpus-specific**: the confidence band shifts with corpus composition, so a
-different collection needs its own sweep. The negative items exist so the threshold is derived
-from observed separation rather than guessed.
+### Measured: 25-item run
 
-### Measured: why the threshold must be calibrated
-
-Running the harness against a 4216-chunk collection of astrophysics textbooks (6 demonstration
-questions: 4 answerable, 2 deliberately out-of-corpus) produced:
+25 questions (20 answerable, 5 deliberately out-of-corpus) against the 4097-chunk
+astrophysics collection, `top_k = 6`, `abstain_threshold = 0.82`:
 
 | Metric | Result |
 |---|---|
-| Retrieval hit-rate | **1.000** (4/4) |
-| Citation accuracy | 0.500 (2/4) |
-| Abstention precision / recall / F1 | **1.000** |
-| Mean confidence, answerable | 0.889 |
-| Mean confidence, negative | 0.794 |
-| **Calibrated `abstain_threshold`** | **0.82** |
+| Retrieval hit-rate | **0.900** (18/20) |
+| Citation accuracy (of answered) | **0.368** (7/19) |
+| Abstention precision | 0.833 |
+| Abstention recall | **1.000** |
+| Abstention F1 | 0.909 |
+| Mean confidence, answerable | 0.882 |
+| Mean confidence, negative | 0.814 |
 
-The important result is the *separation*, not the averages. `multilingual-e5` cosine scores
-compress into a narrow high band — an utterly unrelated question ("optimal cache eviction
-policy for a distributed key-value store") still scored **0.801**. A plausible-looking default
-of `0.35` is therefore **inert**: it never fires, and every question would reach the generator.
-The current `0.82` default is derived from this demonstration measurement and is not the final
-threshold for the coursework eval set.
+**Retrieval works; citation does not.** The pipeline puts a chunk from the right file in
+context 90% of the time, and then the model cites the right source in only 37% of the
+answers it produces. The gap between those two numbers is the honest headline of this
+project: retrieval is a solved sub-problem here, and *citation binding by a 2B-parameter
+model is not*. A larger generator, or a constrained decoding scheme that only permits
+emitting labels present in the context, is the obvious next lever — not more retrieval
+tuning.
 
-Two layers produce the abstention, which is why the out-of-corpus questions were caught even
-before calibration: the confidence gate, and the model's own instruction to reply
-"not found in corpus". Citation accuracy of 0.5 is a real miss, not a rounding artifact —
-on two questions the model cited a source outside the expected set.
+Since the eval set was reverse-engineered from these files' own tables of contents
+(see below), 0.900 should be read as an upper bound on hit-rate, not a typical result.
 
-> These six questions are a **demonstration** that the harness works end to end, not the
-> project's final score.
+### The threshold is too low, and the eval proves it
 
-### Status of the full eval set, stated plainly
+Every negative was correctly refused (recall 1.000), but **not by the mechanism that was
+supposed to catch them**:
 
-`eval/eval_set.yaml` holds 20 answerable questions plus 5 deliberate negatives over the same
-astrophysics collection. Two caveats matter more than the numbers will:
+| Negative question | Confidence | Caught by |
+|---|---|---|
+| `neg-sqlite-wal` | 0.780 | confidence gate |
+| `neg-http2-hpack` | 0.814 | confidence gate |
+| `neg-qcd-string-tension` | 0.819 | confidence gate |
+| `neg-kubernetes-scheduling` | **0.827** | the model's own refusal |
+| `neg-transformer-rope` | **0.830** | the model's own refusal |
 
-1. **The questions are TOC-derived, not owner-authored.** They were written from the PDFs'
-   outline section paths rather than from coursework. Because each question was reverse-engineered
-   from its own answer key, retrieval hit-rate on this set is **partly circular** — it measures
-   that the pipeline retrieves what it was pointed at, not that it answers questions a student
-   would actually ask. Treat it as a smoke test of the harness, not as a quality score.
-2. **The 25-item run has not been completed.** A `--calibrate` run was paused partway; the
-   harness reports only after scoring every item, so there are no partial numbers to publish.
-   No measured coursework table appears here because one does not exist yet, and inventing one
-   would defeat the point of the project.
+Two of five negatives scored *above* the 0.82 gate and reached the generator. They were
+refused only because the prompt instructs the model to answer "not found in corpus" when
+the context does not support an answer. That second layer is doing work the first layer
+was supposed to do — and it is the less reliable of the two, since it depends on a small
+model complying with an instruction.
+
+The same second layer produced the one false abstention: `habitable-zone` scored 0.851,
+passed the gate, and was then refused by the model anyway. That single error is the entire
+difference between abstention precision 0.833 and 1.000.
+
+The fix is visible directly in the data:
+
+```
+highest-scoring negative   0.830   (neg-transformer-rope)
+lowest-scoring answerable  0.850   (hr-main-sequence)
+```
+
+The two classes are **perfectly separable** on this run — any threshold in `(0.830, 0.850]`
+would gate every negative correctly without rejecting a single answerable question. The
+`0.82` default, inherited from a six-question demonstration, sits below that window and
+leaks two negatives into the generator.
+
+This is the argument for calibration restated with better evidence: a threshold is a
+property of a corpus and an embedder, and it is *measured*, never chosen. The value here
+was derived from six questions and is wrong by a small but consequential margin at 25.
+
+### Why a naive threshold does not work at all
+
+`multilingual-e5` cosine scores compress into a narrow high band. Across this run the
+entire spread — from a question about **HTTP/2 HPACK header compression** to one about the
+Friedmann equation — is `0.780` to `0.906`, a total range of 0.126. A plausible-looking
+default of `0.35` is therefore not conservative but **inert**: it never fires, every
+question reaches the generator, and the abstention feature silently does not exist.
+
+The usable signal is not the absolute score but the *separation* between the classes:
+0.882 mean answerable versus 0.814 mean negative.
+
+### Provenance of the eval set, stated plainly
+
+`eval/eval_set.yaml` holds 20 answerable questions plus 5 negatives. One caveat matters
+more than any number above:
+
+**The questions are TOC-derived, not owner-authored.** They were written from the PDFs'
+outline section paths rather than from coursework. Because each question was
+reverse-engineered from its own answer key, retrieval hit-rate on this set is **partly
+circular** — it measures that the pipeline retrieves what it was pointed at, not that it
+answers questions a student would actually ask. Treat 0.900 as a smoke test of the
+harness, not as a quality score. Replacing these with real coursework questions is the
+top open item.
+
+Citation accuracy is *less* affected by this circularity, and is the more trustworthy of
+the two numbers: the model receives the same context either way, and the question is only
+whether it attributes its claims correctly.
 
 A pre-flight against the store's metadata confirmed all 25 expected `(file, section)` pairs
-resolve (`0` unmatched, en-dashes included), so any citation failure the run reports will be
-attributable to retrieval or generation rather than to a mistyped answer key.
+resolve (`0` unmatched, en-dashes included), so the citation failures above are attributable
+to the model rather than to a mistyped answer key.
 
 ### Reproducing the measurement
 
 Generation and embedding **cannot run concurrently on 16 GB** — `llama-server` holds ~4.8 GB
-plus a 24k-context q8 KV cache, and adding the embedder drove available RAM low enough for the
-kernel to kill an ingest mid-run. Serialise the two:
+plus a 24k-context q8 KV cache, and adding the embedder during a bulk ingest drove available
+RAM low enough for the kernel to kill it. Serialise the two:
 
 ```bash
 llm-serve rag-quality -d      # wait for {"status":"ok"} on :8080
 uv run rag eval --calibrate   # ~140 s per answerable question
 ```
 
-Prompt processing measures **~40 tok/s** at 2.2k-token contexts on this hardware, so the cost is
-dominated by the retrieved context, not by the generated answer. Keep `top_k` small.
+The 25-item run above took **56 minutes**. Note that `--calibrate` performs a *second* full
+pass over the eval set rather than reusing the confidences `run_eval` already computed,
+roughly doubling the wall time; reusing them is a straightforward improvement.
+
+Prompt processing measures **~40 tok/s** at 2.2k-token contexts on this hardware, so the cost
+is dominated by the retrieved context, not by the generated answer. Keep `top_k` small.
 
 ## Testing
 
