@@ -116,7 +116,7 @@ Configuration is a TOML file passed with `-c`:
 chroma_dir = "~/.cache/physics-rag/chroma"
 collection_name = "physics"
 top_k = 6
-abstain_threshold = 0.82
+abstain_threshold = 0.84   # calibrate this per collection
 ```
 
 ## Evaluation
@@ -131,7 +131,7 @@ The harness scores three things and calibrates a fourth:
 ### Measured: 25-item run
 
 25 questions (20 answerable, 5 deliberately out-of-corpus) against the 4097-chunk
-astrophysics collection, `top_k = 6`, `abstain_threshold = 0.82`:
+astrophysics collection, `top_k = 6`, `abstain_threshold = 0.82` (the value in force during the run):
 
 | Metric | Result |
 |---|---|
@@ -185,13 +185,19 @@ lowest-scoring answerable  0.850   (hr-main-sequence)
 ```
 
 The two classes are **perfectly separable** on this run — any threshold in `(0.830, 0.850]`
-would gate every negative correctly without rejecting a single answerable question. The
-`0.82` default, inherited from a six-question demonstration, sits below that window and
-leaks two negatives into the generator.
+gates every negative correctly without rejecting a single answerable question. The `0.82`
+default, inherited from a six-question demonstration, sat below that window and leaked two
+negatives into the generator.
+
+`--calibrate` swept 51 candidate thresholds and returned **0.84**, which is now the default
+in `config.py`. On this eval set it lifts abstention precision from 0.833 to 1.000, since
+both leaked negatives (0.827, 0.830) fall below it while the lowest answerable (0.850) stays
+above.
 
 This is the argument for calibration restated with better evidence: a threshold is a
-property of a corpus and an embedder, and it is *measured*, never chosen. The value here
-was derived from six questions and is wrong by a small but consequential margin at 25.
+property of a corpus and an embedder, and it is *measured*, never chosen. The previous value
+was derived from six questions and was wrong by a small but consequential margin at 25 —
+0.02 of cosine distance, which is two of five negatives.
 
 ### Why a naive threshold does not work at all
 

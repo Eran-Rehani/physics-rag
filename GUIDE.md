@@ -315,9 +315,9 @@ store"* — still scored **0.801** against a corpus of astrophysics textbooks.
 
 So a plausible-looking default of `0.35` is not conservative. It is **inert**: it never
 fires, every question reaches the generator, and the abstention feature silently does not
-exist. The current default of `0.82` was derived by sweeping against deliberate negatives.
+exist. The current default of `0.84` was derived by sweeping against deliberate negatives.
 
-It is also **corpus-specific**. The 0.82 applies to the astrophysics collection. `qm2` needs
+It is also **corpus-specific**. The 0.84 applies to the astrophysics collection. `qm2` needs
 its own sweep, and using the astrophysics number there would be a guess wearing the costume
 of a measurement.
 
@@ -376,9 +376,13 @@ lowest-scoring answerable  0.850   (hr-main-sequence)
 ```
 
 The classes are **perfectly separable** on this run: any threshold in `(0.830, 0.850]` gates
-every negative without rejecting an answerable question. The 0.82 default sits just below
-that window. This is the calibration argument with better evidence — a threshold derived
-from six questions was wrong by a small but consequential margin at 25.
+every negative without rejecting an answerable question. The 0.82 default sat just below that
+window; `--calibrate` swept 51 values and returned **0.84**, now the default. Adopting it
+lifts abstention precision from 0.833 to 1.000 on this set.
+
+This is the calibration argument with better evidence — a threshold derived from six
+questions was wrong by a small but consequential margin at 25: 0.02 of cosine distance,
+which is two of five negatives.
 
 ### Provenance, stated plainly
 
@@ -555,8 +559,6 @@ Roughly in order of how much they would improve the project's credibility:
 
 1. **Owner-authored eval pairs.** Replacing the TOC-derived questions with real coursework
    questions removes the circularity and makes the hit-rate mean something.
-2. **Adopt a threshold in `(0.830, 0.850]`** for the astrophysics collection, replacing the
-   0.82 inherited from the six-question demonstration.
 3. **Key `IngestState` by collection**, removing the silent-skip failure mode.
 4. **Calibrate a `qm2`-specific threshold** once its ingest completes.
 5. **`.lyx` support** via `lyx -e latex`, unlocking a whole corpus year.
@@ -595,5 +597,5 @@ silently ignored:
 collection_name = "qm2"
 exclude_dirs = ["Docs", "_archive"]
 top_k = 6
-abstain_threshold = 0.82   # calibrate this per collection
+abstain_threshold = 0.84   # calibrate this per collection
 ```

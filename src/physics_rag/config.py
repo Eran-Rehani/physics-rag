@@ -18,8 +18,12 @@ class Config:
     top_k: int = 6
     # Calibrated, not guessed. multilingual-e5 cosine scores compress into a
     # narrow high band (~0.78-0.91 measured), so a low threshold like 0.35 never
-    # fires. Re-derive for your own corpus with: rag eval --calibrate
-    abstain_threshold: float = 0.82
+    # fires. Swept over a 25-item eval set: the highest-scoring negative was
+    # 0.830 and the lowest-scoring answerable 0.850, so the classes separate
+    # cleanly and 0.84 sits between them. An earlier 0.82, derived from only six
+    # questions, let two negatives through the gate.
+    # Re-derive for your own corpus with: rag eval --calibrate
+    abstain_threshold: float = 0.84
     llama_server_url: str = "http://127.0.0.1:8080"
     generation_timeout: float = 300.0
     exclude_dirs: tuple[str, ...] = ("Docs",)
