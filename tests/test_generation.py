@@ -83,3 +83,43 @@ def test_health_false_on_connection_error() -> None:
         raise httpx.ConnectError("connection failed")
 
     assert _generator(handler).health() is False
+
+
+def test_generate_disables_thinking_by_default() -> None:
+    """Reasoning models spend the token budget on reasoning_content, not content."""
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    assert _generator(handler).generate("q") == "ok"
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+
+
+def test_generate_keeps_thinking_when_explicitly_enabled() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]})
+
+    _generator(handler, enable_thinking=True).generate("q")
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert "chat_template_kwargs" not in body
+
+
+def test_generate_raises_when_answer_was_truncated() -> None:
+    """A truncated answer reads as a bad citation; it must fail loudly instead."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "The Fried"}, "finish_reason": "length"}]},
+        )
+
+    with pytest.raises(GenerationError, match="truncated"):
+        _generator(handler).generate("q", max_tokens=1024)
