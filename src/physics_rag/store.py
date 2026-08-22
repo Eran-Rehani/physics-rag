@@ -66,12 +66,30 @@ class ChromaStore:
     def add(self, chunks: Sequence[Chunk], embeddings: Sequence[Sequence[float]]) -> None:
         if not chunks:
             return
-        chunk_list = list(chunks)
+
+        # chunk_id is content-derived, so byte-identical sections share an id by
+        # design -- that is what makes re-ingest idempotent. Chroma tolerates the
+        # same id across upsert calls but rejects it twice within one call, so
+        # collapse repeats here, keeping the first occurrence.
+        seen: set[str] = set()
+        ids: list[str] = []
+        documents: list[str] = []
+        vectors: list[list[float]] = []
+        metadatas: list[dict[str, object]] = []
+        for chunk, embedding in zip(chunks, embeddings, strict=True):
+            if chunk.chunk_id in seen:
+                continue
+            seen.add(chunk.chunk_id)
+            ids.append(chunk.chunk_id)
+            documents.append(chunk.text)
+            vectors.append(list(embedding))
+            metadatas.append(self._chunk_metadata(chunk))
+
         self._collection.upsert(
-            ids=[chunk.chunk_id for chunk in chunk_list],
-            documents=[chunk.text for chunk in chunk_list],
-            embeddings=[list(embedding) for embedding in embeddings],
-            metadatas=[self._chunk_metadata(chunk) for chunk in chunk_list],
+            ids=ids,
+            documents=documents,
+            embeddings=vectors,
+            metadatas=metadatas,
         )
 
     def query(self, embedding: Sequence[float], top_k: int) -> list[SearchResult]:

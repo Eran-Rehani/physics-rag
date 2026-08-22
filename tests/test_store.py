@@ -106,6 +106,27 @@ def test_chroma_round_trip_is_cosine_and_upserts(tmp_path: Path) -> None:
     assert results[0].score == pytest.approx(1.0, abs=1e-6)
 
 
+def test_chroma_add_collapses_duplicate_ids_within_one_batch(tmp_path: Path) -> None:
+    """Byte-identical sections in two files share a content-derived id.
+
+    Chroma accepts the same id across separate upsert calls but raises
+    DuplicateIDError when one call carries it twice, which killed a real ingest.
+    """
+    pytest.importorskip("chromadb")
+
+    store = ChromaStore(tmp_path / "chroma3", collection_name="dupe_ids")
+    text = "identical boilerplate section"
+    first = make_chunk(text, Path("a.tex"))
+    second = make_chunk(text, Path("b.tex"))
+    assert first.chunk_id == second.chunk_id
+
+    store.add([first, second], [[1.0, 0.0], [1.0, 0.0]])
+
+    assert store.count() == 1
+    results = store.query([1.0, 0.0], top_k=2)
+    assert results[0].filename == "a.tex"
+
+
 def test_chroma_drops_none_page_metadata(tmp_path: Path) -> None:
     pytest.importorskip("chromadb")
 
