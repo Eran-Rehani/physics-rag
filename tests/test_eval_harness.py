@@ -16,6 +16,7 @@ from physics_rag.evaluation import (
     score_item,
     sweep_threshold,
 )
+from physics_rag.generation import GenerationError
 from physics_rag.store import SearchResult
 
 
@@ -249,3 +250,55 @@ def test_best_threshold_breaks_ties_toward_lower_value() -> None:
 def test_best_threshold_rejects_empty_sweep() -> None:
     with pytest.raises(ValueError):
         best_threshold([])
+
+
+class RaisingAnswerService:
+    """Answers normally except for the questions listed in ``failing``."""
+
+    def __init__(self, answers: dict[str, Answer], failing: set[str]) -> None:
+        self.answers = answers
+        self.failing = failing
+
+    def ask(self, question: str, *, top_k: int | None = None) -> Answer:
+        if question in self.failing:
+            raise GenerationError("generation hit the 1024-token limit and was truncated")
+        return self.answers[question]
+
+
+def test_run_eval_survives_a_generation_failure_and_counts_it() -> None:
+    items = [
+        EvalItem(id="a1", question="q1", expected_files=("a.tex",)),
+        EvalItem(id="a2", question="q2", expected_files=("b.tex",)),
+    ]
+    answers = {
+        "q1": _answer("q1", "Answer [a.tex, sec]", [_result("a.tex", "sec")], confidence=0.8),
+    }
+    service = RaisingAnswerService(answers, failing={"q2"})
+
+    report = run_eval(items, service)
+
+    assert report.n_generation_failures == 1
+    # The failure must not land in the citation denominator: one answered item,
+    # cited correctly, so accuracy stays 1.0 rather than being diluted to 0.5.
+    assert report.citation_accuracy == 1.0
+    failed = next(r for r in report.results if r.item.id == "a2")
+    assert failed.generation_error
+    assert failed.citation_correct is False
+    assert "ERROR" in format_report(report)
+    assert "Generation failures           : 1" in format_report(report)
+
+
+def test_sweep_threshold_skips_questions_the_generator_could_not_answer() -> None:
+    items = [
+        EvalItem(id="a", question="q1", expected_files=("x.tex",)),
+        EvalItem(id="n", question="q2", answerable=False),
+    ]
+    answers = {"q1": _answer("q1", "text", [_result("x.tex")], confidence=0.9)}
+    service = RaisingAnswerService(answers, failing={"q2"})
+
+    sweep = sweep_threshold(items, service, [0.5])
+
+    # The only negative failed, so there is nothing to abstain on and the sweep
+    # still returns rather than aborting the whole run.
+    assert len(sweep) == 1
+    assert sweep[0][0] == 0.5

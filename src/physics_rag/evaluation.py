@@ -15,6 +15,7 @@ from typing import Protocol
 import yaml
 
 from physics_rag.answer import Answer, extract_cited_labels
+from physics_rag.generation import GenerationError
 
 
 class AnswerLike(Protocol):
@@ -41,6 +42,10 @@ class ItemResult:
     confidence: float
     answer_text: str
     correct_abstention: bool
+    # Non-empty when the generator raised instead of answering. Kept distinct
+    # from citation_correct=False: "produced no answer" and "cited the wrong
+    # source" are different failures and must not share a denominator.
+    generation_error: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +60,7 @@ class EvalReport:
     abstention_f1: float
     mean_confidence_answerable: float
     mean_confidence_negative: float
+    n_generation_failures: int = 0
 
 
 def load_eval_set(path: Path) -> list[EvalItem]:
@@ -225,6 +231,21 @@ def _f1(precision: float, recall: float) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
+def _failed_item(item: EvalItem, exc: Exception) -> ItemResult:
+    """Record a generator failure as its own outcome, not as a wrong citation."""
+    return ItemResult(
+        item=item,
+        retrieved_files=(),
+        retrieval_hit=False,
+        citation_correct=False,
+        abstained=False,
+        confidence=0.0,
+        answer_text="",
+        correct_abstention=False,
+        generation_error=str(exc),
+    )
+
+
 def run_eval(
     items: Sequence[EvalItem],
     service: AnswerLike,
@@ -236,7 +257,14 @@ def run_eval(
     for item in items:
         if progress:
             progress(f"evaluating {item.id}")
-        results.append(score_item(item, service.ask(item.question, top_k=top_k)))
+        # A single unanswered question must not discard a 40-minute run: record
+        # the failure and keep going, then surface the count in the report.
+        try:
+            results.append(score_item(item, service.ask(item.question, top_k=top_k)))
+        except GenerationError as exc:
+            if progress:
+                progress(f"  generation failed for {item.id}: {exc}")
+            results.append(_failed_item(item, exc))
 
     results_tuple = tuple(results)
 
@@ -246,7 +274,11 @@ def run_eval(
     hits = sum(1 for r in results_tuple if r.item.answerable and r.retrieval_hit)
     retrieval_hit_rate = hits / n_answerable if n_answerable else 0.0
 
-    answered = [r for r in results_tuple if r.item.answerable and not r.abstained]
+    answered = [
+        r
+        for r in results_tuple
+        if r.item.answerable and not r.abstained and not r.generation_error
+    ]
     citation_accuracy = (
         sum(1 for r in answered if r.citation_correct) / len(answered) if answered else 0.0
     )
@@ -268,6 +300,7 @@ def run_eval(
         results=results_tuple,
         n_answerable=n_answerable,
         n_negative=n_negative,
+        n_generation_failures=sum(1 for r in results_tuple if r.generation_error),
         retrieval_hit_rate=retrieval_hit_rate,
         citation_accuracy=citation_accuracy,
         abstention_precision=abstention_precision,
@@ -296,7 +329,12 @@ def sweep_threshold(
     """
     observed: list[tuple[bool, float]] = []
     for item in items:
-        answer = service.ask(item.question, top_k=top_k)
+        # Same survival rule as run_eval: a question the generator cannot answer
+        # contributes no confidence, so drop it rather than aborting the sweep.
+        try:
+            answer = service.ask(item.question, top_k=top_k)
+        except GenerationError:
+            continue
         observed.append((item.answerable, answer.confidence))
 
     n_negative = sum(1 for answerable, _ in observed if not answerable)
@@ -334,12 +372,16 @@ def format_report(report: EvalReport) -> str:
         f"Abstention F1                 : {report.abstention_f1:.3f}",
         f"Mean confidence (answerable)  : {report.mean_confidence_answerable:.3f}",
         f"Mean confidence (negative)    : {report.mean_confidence_negative:.3f}",
+        f"Generation failures           : {report.n_generation_failures}",
         "",
         f"{'id':30} {'hit':5} {'citation':9} {'abstained':10} {'conf':>6}",
         f"{'-' * 30} {'-' * 5} {'-' * 9} {'-' * 10} {'-' * 6}",
     ]
     for r in report.results:
-        if r.item.answerable:
+        if r.generation_error:
+            hit = "err"
+            citation = "ERROR"
+        elif r.item.answerable:
             hit = "hit" if r.retrieval_hit else "miss"
             citation = "ok" if r.citation_correct else "bad"
         else:
